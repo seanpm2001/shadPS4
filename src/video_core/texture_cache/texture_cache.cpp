@@ -80,10 +80,35 @@ void TextureCache::UnmapMemory(VAddr cpu_addr, size_t size) {
 ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, ImageId cache_image_id) {
     const auto& cache_info = slot_images[cache_image_id].info;
 
-    const bool was_bound_as_texture =
-        !cache_info.usage.depth_target && (cache_info.usage.texture || cache_info.usage.storage);
-    if (requested_info.usage.depth_target && was_bound_as_texture) {
-        auto new_image_id = slot_images.insert(instance, scheduler, requested_info);
+    if (!cache_info.IsDepthStencil() && !requested_info.IsDepthStencil()) {
+        return {};
+    }
+
+    const bool stencil_match = requested_info.HasStencil() == cache_info.HasStencil();
+    const bool bpp_match = requested_info.num_bits == cache_info.num_bits;
+
+    // If an image in the cache has less slices we need to expand it
+    bool recreate = cache_info.resources < requested_info.resources;
+
+    if (requested_info.usage.depth_target) {
+        // The guest has requested previously allocated texture to be bound as a depth target.
+        // In this case we need to convert Rx float to a Dx[S8] as requested
+        recreate |= !cache_info.IsDepthStencil();
+
+        // The guest is trying to bind a depth target and cache has it. Need to be sure that aspects
+        // and bpp match
+        recreate |= cache_info.IsDepthStencil() && !(stencil_match && bpp_match);
+    }
+
+    // If the guest is going to use previously created depth as storage, the image needs to be
+    // recreated. (TODO: Probably a case with linear rgba8 aliasing is legit)
+    recreate |= cache_info.IsDepthStencil() && requested_info.usage.storage;
+
+    if (recreate) {
+        auto new_info{requested_info};
+        new_info.resources = std::max(requested_info.resources, cache_info.resources);
+        new_info.usage.texture |= cache_info.usage.texture;
+        auto new_image_id = slot_images.insert(instance, scheduler, new_info);
         RegisterImage(new_image_id);
 
         // TODO: perform a depth copy here
@@ -92,18 +117,8 @@ ImageId TextureCache::ResolveDepthOverlap(const ImageInfo& requested_info, Image
         return new_image_id;
     }
 
-    const bool should_bind_as_texture =
-        !requested_info.usage.depth_target &&
-        (requested_info.usage.texture || requested_info.usage.storage);
-    if (cache_info.usage.depth_target && should_bind_as_texture) {
-        if (cache_info.resources == requested_info.resources) {
-            return cache_image_id;
-        } else {
-            UNREACHABLE();
-        }
-    }
-
-    return {};
+    // Will be handled by view
+    return cache_image_id;
 }
 
 ImageId TextureCache::ResolveOverlap(const ImageInfo& image_info, ImageId cache_image_id,

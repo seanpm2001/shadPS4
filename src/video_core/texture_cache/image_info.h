@@ -28,6 +28,7 @@ struct ImageInfo {
     bool IsBlockCoded() const;
     bool IsPacked() const;
     bool IsDepthStencil() const;
+    bool HasStencil() const;
 
     bool IsMipOf(const ImageInfo& info) const;
     bool IsSliceOf(const ImageInfo& info) const;

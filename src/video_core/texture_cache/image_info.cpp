@@ -221,6 +221,7 @@ ImageInfo::ImageInfo(const AmdGpu::Image& image, const Shader::ImageResource& de
     resources.layers = image.NumLayers(desc.is_array);
     num_bits = NumBits(image.GetDataFmt());
     usage.texture = true;
+    usage.storage = desc.is_storage;
 
     guest_address = image.Address();
 
